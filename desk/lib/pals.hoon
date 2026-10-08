@@ -8,7 +8,7 @@
 ++  targets  |=  list=@ta          (s (set ship) %targets ?~(list / /[list]))
 ++  mutuals  |=  list=@ta          (s (set ship) %mutuals ?~(list / /[list]))
 ++  leeche   |=  =ship             (s _| /leeches/(scot %p ship))
-++  target   |=  [list=@ta =ship]  (s _| /mutuals/[list]/(scot %p ship))
+++  target   |=  [list=@ta =ship]  (s _| /targets/[list]/(scot %p ship))
 ++  mutual   |=  [list=@ta =ship]  (s _| /mutuals/[list]/(scot %p ship))
 ::
 ++  labels   ?.  running  `(set @ta)`~

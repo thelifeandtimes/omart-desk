@@ -184,12 +184,13 @@ export const useOmart = create<OmartState>((set, get) => ({
   meet: async (who) => {
     const { our, pals } = get();
     if (who === our) return "that is this ship";
-    if (pals.some((p) => p.ship === who)) return null;
+    if (pals.some((p) => p.ship === who && p.target)) return null;
     const res = await api("/meet", { method: "POST", body: JSON.stringify({ ship: who }) });
     if (!res.ok) return res.error;
-    const pal: PalRecord = { ship: who, target: true, leech: false };
+    const previous = get().pals.find((p) => p.ship === who);
+    const pal: PalRecord = { ship: who, target: true, leech: previous?.leech ?? false };
     const log = [event("meet", `target ${who}`, { ship: who }), ...get().log];
-    set({ pals: [...pals, pal], log });
+    set({ pals: [...get().pals.filter((p) => p.ship !== who), pal], log });
     persist({ saved: [...get().saved], log });
     void get().refresh();
     return null;

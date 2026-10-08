@@ -2,3 +2,7 @@ ui/node_modules/
 ui/dist/
 *.glob
 .DS_Store
+
+# Local fakeship state and dependencies
+.dev/
+__pycache__/

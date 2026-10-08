@@ -14,6 +14,7 @@ const NAV = [
 
 export function AppShell({ children }: { children: ReactNode }) {
   const hydrate = useOmart((s) => s.hydrate);
+  const refresh = useOmart((s) => s.refresh);
   const hydrated = useOmart((s) => s.hydrated);
   const our = useOmart((s) => s.our);
   const plugins = useOmart((s) => s.plugins);
@@ -23,6 +24,30 @@ export function AppShell({ children }: { children: ReactNode }) {
   useEffect(() => {
     hydrate();
   }, [hydrate]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    let pending = false;
+    const update = async () => {
+      if (document.hidden || pending) return;
+      pending = true;
+      try {
+        await refresh();
+      } catch {
+        // Keep the last catalog while the ship is temporarily unreachable.
+      } finally {
+        pending = false;
+      }
+    };
+    const timer = window.setInterval(update, 5000);
+    window.addEventListener("focus", update);
+    document.addEventListener("visibilitychange", update);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", update);
+      document.removeEventListener("visibilitychange", update);
+    };
+  }, [hydrated, refresh]);
 
   if (!hydrated) {
     return <div className="min-h-dvh bg-bg" aria-hidden />;

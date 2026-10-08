@@ -49,6 +49,9 @@ Omart started as a desk for one ship, with a React client beside it. The desk an
 
 ## For developers
 
+The three-ship tmux development environment and sharing regression checks are
+documented in [DEVELOPMENT.md](DEVELOPMENT.md).
+
 | Path | What it is |
 |---|---|
 | `desk/` | Gall desk `%omart`, including the built UI in `desk/web/`. This is what `|install` ships. |

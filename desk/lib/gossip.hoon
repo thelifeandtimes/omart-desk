@@ -242,10 +242,10 @@
       ?>  =(/~/gossip/source path)
       ::  if hops is configured at 0, we don't broadcast at all.
       ::
-      =/  =rumor  (en-rumor cage.p.card)
-      =.  memory  (~(put in memory) (en-hash rumor))
       ?:  =(0 hops.manner)
         [caz state]
+      =/  =rumor  (en-rumor cage.p.card)
+      =.  memory  (~(put in memory) (en-hash rumor))
       =^  cas  state  (emit-rumor rumor)
       [(weld cas caz) state]
     ::
@@ -364,13 +364,20 @@
       %-  ~(has by wex.bowl)
       [/~/gossip/gossip/(scot %p s) s dap.bowl]
     ::
-    ++  want-target
-      %~  has  in
+    ++  hear-targets
+      ^-  (set ship)
       ?-  hear.manner
         %anybody  (~(uni in leeches:pals) (targets:pals ~.))
         %targets  (targets:pals ~.)
         %mutuals  (mutuals:pals ~.)
       ==
+    ::
+    ++  want-target
+      ~(has in hear-targets)
+    ::
+    ++  watch-targets
+      ^-  (list card)
+      (zing (turn ~(tap in hear-targets) watch-target))
     ::
     ++  retry-timer
       |=  [t=@dr p=path]
@@ -402,12 +409,7 @@
       ^-  (list card)
       =*  new  hear.manner
       ?:  =(old new)  ~
-      =/  listen=(set ship)
-        ?-  new
-          %anybody  (~(uni in leeches:pals) (targets:pals ~.))
-          %targets  (targets:pals ~.)
-          %mutuals  (mutuals:pals ~.)
-        ==
+      =/  listen=(set ship)  hear-targets
       =/  hearing=(set ship)
         %-  ~(gas in *(set ship))
         %+  murn  ~(tap by wex.bowl)
@@ -498,7 +500,9 @@
           =^  cards  inner  (on-load:og ile)
           =^  cards  state  (play-cards:up cards)
           ::TODO  for later versions, add :future retry logic as needed
-          [cards this]
+          ::  Recover missing watches on upgrade, including subscriptions
+          ::  rejected before a pal added us back. Active watches are kept.
+          [(weld cards watch-targets:up) this]
       ::
       +$  state-any  $%(state-0 state-1 state-2 state-3)
       ::
@@ -722,7 +726,9 @@
               %near
             ?-  hear.manner
               %anybody  view
-              %targets  ~
+              ::  Our earlier watch may have been rejected while this
+              ::  friendship was one-sided. Retry as soon as they add us.
+              %targets  ?:((target:pals ~. ship) view ~)
               %mutuals  ?:((mutual:pals ~. ship) view ~)
             ==
           ::

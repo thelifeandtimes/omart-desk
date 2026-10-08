@@ -23,12 +23,22 @@ function PalsPage() {
   const part = useOmart((s) => s.part);
   const reachable = reachableShips(our, pals, config);
   const [who, setWho] = useState("");
+  const [error, setError] = useState<string | null>(null);
 
-  function submit(e: FormEvent) {
+  async function addPal(ship: string) {
+    try {
+      const problem = await meet(ship);
+      setError(problem);
+      if (!problem) setWho("");
+    } catch {
+      setError("Could not reach this ship. Try again.");
+    }
+  }
+
+  async function submit(e: FormEvent) {
     e.preventDefault();
     const ship = who.trim().startsWith("~") ? who.trim() : `~${who.trim()}`;
-    if (ship.length > 3) meet(ship);
-    setWho("");
+    if (ship.length > 3) await addPal(ship);
   }
 
   return (
@@ -38,8 +48,8 @@ function PalsPage() {
           <p className="font-mono text-[11px] tracking-wide text-subtle uppercase">%pals · gossip</p>
           <h1 className="mt-2 font-display text-4xl tracking-tight italic">Who you hear</h1>
           <p className="mt-3 max-w-xl text-sm leading-relaxed text-muted">
-            Meet someone and their catalog arrives as rumor. Raise hops to hear pals of pals. Gossip
-            watches this list, then facts listings onto whoever you may tell.
+            Add each other as pals to exchange listings with the default settings. Hops controls
+            how far the listings you publish can travel through your pals.
           </p>
 
           <GossipGraph className="mt-8" />
@@ -63,6 +73,7 @@ function PalsPage() {
               Meet
             </Button>
           </form>
+          {error && <p role="alert" className="mt-2 text-sm text-muted">{error}</p>}
 
           {pals.length === 0 ? (
             <p className="mt-6 text-sm text-muted">No pals yet. Meet a ship to open the first ring.</p>
@@ -81,9 +92,15 @@ function PalsPage() {
                       {DISPLAY_NAMES[pal.ship] ? ` · ${DISPLAY_NAMES[pal.ship]}` : ""}
                     </p>
                   </div>
-                  <Button type="button" size="sm" variant="ghost" onClick={() => part(pal.ship)}>
-                    Part
-                  </Button>
+                  {pal.target ? (
+                    <Button type="button" size="sm" variant="ghost" onClick={() => part(pal.ship)}>
+                      Part
+                    </Button>
+                  ) : (
+                    <Button type="button" size="sm" variant="ghost" onClick={() => addPal(pal.ship)}>
+                      Add back
+                    </Button>
+                  )}
                 </li>
               ))}
             </ul>
