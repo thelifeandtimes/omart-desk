@@ -103,7 +103,7 @@
 ++  check-plugin
   |=  p=plugin
   ^-  (each plugin @t)
-  ?.  ((sane %tas) id.p)  [%| 'bad id']
+  ?.  ((sane %tas) id.p)  [%| 'listing id must start with a lowercase letter; use lowercase letters, digits and hyphens']
   ?.  (git-ok git.p)      [%| 'git must be an http(s) URL']
   ?:  =(0 (met 3 name.p))  [%| 'name required']
   ?:  =(0 (met 3 description.p))  [%| 'description required']
@@ -148,14 +148,37 @@
       pass+b+pass.cfg
   ==
 ++  pal-json
-  |=  [targs=(set @p) leech=(set @p) who=@p]
+  |=  [=bowl:gall targs=(set @p) leech=(set @p) who=@p]
   ^-  json
+  =/  sub  (~(get by wex.bowl) [/~/gossip/gossip/(scot %p who) who dap.bowl])
   =,  enjs:format
   %-  pairs
   :~  ship+s+(scot %p who)
       target+b+(~(has in targs) who)
       leech+b+(~(has in leech) who)
+      connection+s+?~(sub 'disconnected' ?:(-.u.sub 'connected' 'connecting'))
   ==
+++  pals-install-state
+  |=  =bowl:gall
+  ^-  [phase=@t source=(unit ship)]
+  =/  ego  (scot %p our.bowl)
+  =/  wen  (scot %da now.bowl)
+  =/  sources  .^((map desk [ship desk]) %gx /[ego]/hood/[wen]/kiln/sources/noun)
+  =/  source  (~(get by sources) %pals)
+  =/  from=(unit ship)  ?~(source ~ `-.u.source)
+  ?:  running:~(. pals bowl)  ['ready' from]
+  =/  desks  .^(rock:tire:clay %cx /[ego]//[wen]/tire)
+  =/  installed  (~(get by desks) %pals)
+  ?~  installed  [?~(source 'missing' 'installing') from]
+  ?:  =(%dead zest.u.installed)  ['suspended' from]
+  ?:  !=(~ wic.u.installed)  ['waiting' from]
+  ?:  =(%held zest.u.installed)  ['installing' from]
+  ['starting' from]
+++  pals-status-json
+  |=  =bowl:gall
+  ^-  json
+  =/  status  (pals-install-state bowl)
+  (pairs:enjs:format ~[phase+s+phase.status source+?~(source.status ~ s+(scot %p u.source.status))])
 ++  pals-json
   |=  =bowl:gall
   ^-  json
@@ -166,7 +189,8 @@
   =,  enjs:format
   %-  pairs
   :~  our+s+(scot %p our.bowl)
-      pals+a+(turn all |=(who=@p (pal-json targs leech who)))
+      status+(pals-status-json bowl)
+      pals+a+(turn all |=(who=@p (pal-json bowl targs leech who)))
   ==
 ++  plugin-from-json
   |=  [=bowl:gall jon=json]
@@ -186,7 +210,7 @@
     ==
   ?~  raw  [%| 'missing fields']
   =/  [i=@t n=@t g=@t d=@t v=@t a=@t ks=(list @t) ts=(list @t)]  u.raw
-  ?.  ((sane %tas) i)  [%| 'bad id']
+  ?.  ((sane %tas) i)  [%| 'listing id must start with a lowercase letter; use lowercase letters, digits and hyphens']
   =/  kinds=(list kind)
     (murn ks kind-of)
   =/  tags=(list term)
@@ -372,10 +396,33 @@
       %+  give-simple-payload:app:server  eyre-id
       (handle-get bowl listings cfg req)
     ?:  =(method %'POST')
+      ?:  =(tail %install-pals)
+        ?^  no=(need-user req '/~/login?redirect=/apps/omart/pals')
+          :_  this
+          (give-simple-payload:app:server eyre-id u.no)
+        =/  status  (pals-install-state bowl)
+        ?:  =('missing' phase.status)
+          :_  this
+          [%pass /pals-install/[eyre-id] %agent [our.bowl %hood] %poke %kiln-install !>([%pals ~paldev %pals])]~
+        ?:  =('suspended' phase.status)
+          :_  this
+          [%pass /pals-install/[eyre-id] %agent [our.bowl %hood] %poke %kiln-revive !>(%pals)]~
+        :_  this
+        (give-simple-payload:app:server eyre-id (json-ok (pals-status-json bowl)))
+      ?:  =(tail %retry)
+        ?^  no=(need-user req '/~/login?redirect=/apps/omart/pals')
+          :_  this
+          (give-simple-payload:app:server eyre-id u.no)
+        :_  this
+        %+  weld  [retry:gossip]~
+        (give-simple-payload:app:server eyre-id (json-ok (pairs:enjs:format ~[ok+b+&])))
       ?:  =(tail %meet)
         ?^  no=(need-user req '/~/login?redirect=/apps/omart/pals')
           :_  this
           (give-simple-payload:app:server eyre-id u.no)
+        ?.  running:~(. pals bowl)
+          :_  this
+          (give-simple-payload:app:server eyre-id (json-err 409 '%pals is not running'))
         ?~  body.request.req
           :_  this
           (give-simple-payload:app:server eyre-id (json-err 400 'missing body'))
@@ -396,6 +443,9 @@
         ?^  no=(need-user req '/~/login?redirect=/apps/omart/pals')
           :_  this
           (give-simple-payload:app:server eyre-id u.no)
+        ?.  running:~(. pals bowl)
+          :_  this
+          (give-simple-payload:app:server eyre-id (json-err 409 '%pals is not running'))
         ?~  body.request.req
           :_  this
           (give-simple-payload:app:server eyre-id (json-err 400 'missing body'))
@@ -497,6 +547,8 @@
     ?>  =(src our):bowl
     =+  act=!<(action vase)
     ?-    -.act
+        %retry
+      [[retry:gossip]~ this]
         %publish
       =/  made  (check-plugin plugin.act(ship our.bowl, when now.bowl))
       ?:  ?=(%| -.made)  [~ this]
@@ -521,9 +573,13 @@
   ?.  =(/~/gossip/source path)
     (on-watch:def path)
   :_  this
-  %+  turn  ~(val by listings)
+  ::  /source rewraps each fact with our configured hop budget. Only the
+  ::  origin may replenish that budget. Cached listings stay on live relay.
+  %+  murn  ~(val by listings)
   |=  =plugin
-  [%give %fact ~ %omart-plugin !>(plugin)]
+  ^-  (unit card)
+  ?.  =(ship.plugin our.bowl)  ~
+  `[%give %fact ~ %omart-plugin !>(plugin)]
 ::
 ++  on-arvo
   |=  [=wire sign=sign-arvo]
@@ -538,6 +594,13 @@
 ++  on-agent
   |=  [=wire =sign:agent:gall]
   ^-  (quip card _this)
+  ?:  ?=([%pals-install @ ~] wire)
+    ?>  ?=(%poke-ack -.sign)
+    :_  this
+    %+  give-simple-payload:app:server  i.t.wire
+    ?^  p.sign
+      (json-err 500 '%pals install request was rejected; check +vats %pals in the dojo')
+    (json-ok (pals-status-json bowl))
   ?:  ?=([%pals *] wire)
     [~ this]
   ?.  ?=([%~.~ %gossip *] wire)

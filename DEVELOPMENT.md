@@ -74,12 +74,18 @@ Do not interrupt it during cleanup. It checks:
 - A watch rejected before add-back recovers in seconds; earlier and newly
   published listings arrive, in both directions.
 - Removing an incoming friendship does not drop a ship still in our targets.
+- Explicit HTTP and dojo retries recover a rejected subscription after a
+  publisher changes tell policy, preserving gossip settings.
 - A new one-hop listing stops at the direct pal; a new two-hop listing reaches
   the third ship through a chain, and its retraction follows it.
+- Reconnecting to a relay does not re-originate its cached one-hop listings.
 - Zero-hop publishing and retracting succeed locally and send no live gossip.
 
-The UI tests cover adding back an incoming pal without losing its leech flag or
-creating duplicate rows, and preserving that pal when the server rejects the action.
+The UI tests cover add-back, dependency setup/progress/error states, install
+request failures, and listing ID validation. In the ship-served browser, stopping
+`%pals` hides the full Pals interface; Resume restores it and its existing state.
+Fake ships cannot download from the livenet `~paldev`: the real install button
+uses that source, while this fakenet continues to distribute `%pals` from `~nec`.
 
 ## Reproduced sharing failures (2026-10-08)
 
@@ -101,20 +107,27 @@ The vendored pals helper's `target` query also used `/mutuals` instead of
 Two UI problems compounded this: `meet()` skipped any known ship, including
 incoming-only pals, and the UI never refreshed after hydration. Incoming pals now
 have an **Add back** action, and open pages refresh automatically. Both behaviors
-were verified in the ship-served browser against the live network.
+were verified in the ship-served browser against the running fakenet.
 
 Zero-hop publication also returned HTTP 500: the gossip library evaluated
 `dec hops` before checking for zero. The zero guard now precedes rumor creation.
 
-These checks cover live hop limits. The vendored protocol still has limitations
-outside this fix: subscription snapshots contain cached listings, and repeated
-identical retractions can be suppressed by rumor deduplication. During reconnect
-testing, stale `probe-local`, `probe-nec`, `probe-bus`, and
-`browser-refresh-check` copies survived on some peers after their origins had
-retracted them. Those small diagnostic records are retained as evidence. New
-`check-*` fixtures are cleaned up by the passing integration suite. Offline
-convergence and strict hop limits across reconnections need separate regression
-coverage and a versioned update/retraction design.
+Further reconnect testing found that snapshots treated cached listings as newly
+originating rumors, resetting their hop budget and resurrecting withdrawn copies.
+Snapshots now include only the responding ship's own listings; relayed listings
+travel through live gossip with their original hop budget. **Retry connections**
+and `:omart &omart-action [%retry ~]` retry only missing watches. The Pals page
+shows actual Gall subscription acknowledgments rather than inferring connections
+from the pal list.
+
+The saved state and existing rumor formats are unchanged. Full offline
+convergence remains unfinished: withdrawals missed while offline are not replayed,
+and withdrawing the same ID after re-publishing it can hit identical-rumor
+deduplication. An offline relay also does not catch up historical multi-hop
+listings from a peer's cache. These need a versioned update/retraction design.
+Old peers can still re-originate their caches until they upgrade. Stale probe
+records and fixtures from failing regression runs remain diagnostic evidence;
+passing runs clean up their own newly-created `check-*` fixtures.
 
 ## Recreate from scratch
 

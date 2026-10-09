@@ -29,6 +29,7 @@
 +$  action
   $%  [%publish =plugin]
       [%retract =id]
+      [%retry ~]
   ==
 +$  update
   $%  [%listings p=(list plugin)]

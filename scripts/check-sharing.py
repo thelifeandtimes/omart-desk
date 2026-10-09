@@ -151,6 +151,28 @@ def main():
         bus.api("config", DEFAULT)
         print("PASS: a retained target remains subscribed when its leech status changes", flush=True)
 
+        # No pal event occurs when only the publisher's tell policy changes.
+        # A previously rejected subscriber otherwise waits for the 30m timer.
+        bus.api("part", {"ship": "~nec"})
+        bus.api("config", {**DEFAULT, "tell": "mutuals"})
+        wait_for("policy change removes nec's subscription", lambda: not watching("nec", "bus"))
+        missed = publish(bus, "before-retry")
+        assert missed not in nec.ids()
+        bus.api("config", {**DEFAULT, "tell": "anybody"})
+        before_retry = nec.api("config.json")
+        nec.api("retry", {})
+        seen(missed, nec)
+        assert nec.api("config.json") == before_retry
+        assert next(p for p in nec.api("pals.json")["pals"] if p["ship"] == "~bus")["connection"] == "connected"
+        # The dojo action uses the same retry helper, with active watches kept.
+        conn("nec", '=/  m  (strand ,vase)  ;<  ~  bind:m  '
+             '(poke [~nec %omart] %omart-action !>([%retry ~]))  (pure:m !>(%ok))')
+        live_retry = publish(bus, "after-retry")
+        seen(live_retry, nec)
+        bus.api("meet", {"ship": "~nec"})
+        bus.api("config", DEFAULT)
+        print("PASS: explicit retry catches up after a tell-policy change and preserves config; dojo retry works", flush=True)
+
         bus.api("meet", {"ship": "~tyr"})
         time.sleep(1)
         tyr.api("meet", {"ship": "~bus"})
@@ -160,6 +182,12 @@ def main():
         seen(one, bus)
         time.sleep(1)
         assert one not in tyr.ids(), "one-hop publication escaped direct pals"
+        tyr.api("part", {"ship": "~bus"})
+        wait_for("tyr disconnects from bus", lambda: not watching("tyr", "bus"))
+        tyr.api("meet", {"ship": "~bus"})
+        wait_for("tyr reconnects to bus", lambda: watching("tyr", "bus"))
+        time.sleep(1)
+        assert one not in tyr.ids(), "reconnect re-originated a cached one-hop listing"
         nec.api("config", {**DEFAULT, "hops": 2})
         two = publish(nec, "two-hop")
         seen(two, bus, tyr)

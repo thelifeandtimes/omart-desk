@@ -34,7 +34,20 @@ export type PalRecord = {
   target: boolean;
   /** they added us */
   leech: boolean;
+  connection?: "connected" | "connecting" | "disconnected";
 };
+
+export type PalsStatus = {
+  phase: "missing" | "installing" | "waiting" | "starting" | "suspended" | "ready";
+  source: Ship | null;
+};
+
+export const LISTING_ID_PATTERN = "[a-z][a-z0-9-]*";
+export const LISTING_ID_HELP = "Start with a lowercase letter; use lowercase letters, digits, and hyphens (no periods).";
+
+export function validListingId(id: string) {
+  return new RegExp(`^${LISTING_ID_PATTERN}$`).test(id);
+}
 
 export type PluginListing = {
   id: string;

@@ -21,7 +21,9 @@ In the dojo, on a ship that already has `%pals`:
 |install ~pilryg-tanmus-hopsec-mitwel--nodreb-sigtul-falhut-samzod %omart
 ```
 
-If you do not have `%pals` yet:
+If you do not have `%pals` yet, open Omart's Pals page and choose **Install %pals
+from ~paldev**. It tracks the actual desk/agent state and opens your pal list once
+the agent is running. You can also install it in the dojo:
 
 ```
 |install ~paldev %pals
@@ -31,6 +33,36 @@ If you do not have `%pals` yet:
 Open the Omart tile in Landscape. You get the same Bazaar, Pals, and Publish screens as the publisher. Your pal list and the listings you hear are your own.
 
 Publishing the desk from your ship is in [INSTALL.md](INSTALL.md).
+
+## A pal's listing is missing
+
+With the defaults, both ships must add each other as pals, and the publisher
+must have hops greater than zero. Installing Omart from a ship does not make it
+a pal. The Pals page shows whether your subscription to each peer is connected.
+
+Click **Retry connections**, or run this after installing the current version:
+
+```hoon
+:omart &omart-action [%retry ~]
+```
+
+This immediately retries missing subscriptions allowed by your hear setting,
+without changing pals, settings, listings, or existing subscriptions. A rejected
+watch otherwise waits up to 30 minutes for the next automatic retry. If already
+connected, the command leaves that connection alone.
+
+For an older Omart version, change **hear** to another mode and then restore your
+original mode to trigger reconciliation. To check installations manually:
+
+```hoon
++vats %omart
++vats %pals
+```
+
+Listing IDs use lowercase letters, digits, and hyphens, beginning with a letter:
+`yourname-plugin`. This is an Omart catalog key, separate from the plugin's
+`manifest.json` ID (which may contain a period). Omarchy installs the repository
+using its Git URL and manifest.
 
 ## What you get
 
@@ -85,6 +117,15 @@ The client talks to Gall at `/omart`. Mutating routes need a logged-in session, 
 | POST | `/omart/meet` | yes |
 | POST | `/omart/part` | yes |
 | POST | `/omart/config` | yes |
+| POST | `/omart/install-pals` | yes |
+| POST | `/omart/retry` | yes |
+
+`pals.json` includes `status: {phase, source}` for the dependency, plus each pal's
+outgoing gossip `connection` (`connected`, `connecting`, or `disconnected`).
+The install endpoint requests `%pals` from `~paldev` only when missing; it resumes
+a suspended desk without changing its source, and is a no-op while installing
+or already running. Its success acknowledges the request; poll `pals.json` for
+completion. Requests rejected by Hood return an error.
 
 Gossip defaults: hops 1, hear and tell `%targets`, pass off. The Pals page pokes Gall to change them.
 

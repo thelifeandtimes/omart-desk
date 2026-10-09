@@ -4,6 +4,7 @@ import { GossipGraph } from "@/components/gossip-graph";
 import { Sigil } from "@/components/sigil";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PalsSetup } from "@/components/pals-setup";
 import { reachableShips } from "@/lib/omart/gossip";
 import { DISPLAY_NAMES } from "@/lib/omart/ships";
 import { useOmart } from "@/lib/omart/store";
@@ -18,12 +19,31 @@ function PalsPage() {
   const setConfig = useOmart((s) => s.setConfig);
   const our = useOmart((s) => s.our);
   const pals = useOmart((s) => s.pals);
+  const palsStatus = useOmart((s) => s.palsStatus);
+  const palsError = useOmart((s) => s.palsError);
+  const installPals = useOmart((s) => s.installPals);
+  const refresh = useOmart((s) => s.refresh);
+  const retryConnections = useOmart((s) => s.retryConnections);
   const plugins = useOmart((s) => s.plugins);
   const meet = useOmart((s) => s.meet);
   const part = useOmart((s) => s.part);
   const reachable = reachableShips(our, pals, config);
   const [who, setWho] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [retrying, setRetrying] = useState(false);
+  const [retryNote, setRetryNote] = useState<string | null>(null);
+
+  async function retry() {
+    setRetrying(true);
+    setRetryNote(null);
+    try {
+      const problem = await retryConnections();
+      setError(problem);
+      if (!problem) setRetryNote("Retry requested. Connection status updates automatically.");
+    } finally {
+      setRetrying(false);
+    }
+  }
 
   async function addPal(ship: string) {
     try {
@@ -39,6 +59,10 @@ function PalsPage() {
     e.preventDefault();
     const ship = who.trim().startsWith("~") ? who.trim() : `~${who.trim()}`;
     if (ship.length > 3) await addPal(ship);
+  }
+
+  if (palsStatus?.phase !== "ready") {
+    return <PalsSetup status={palsStatus} error={palsError} install={installPals} refresh={refresh} />;
   }
 
   return (
@@ -60,6 +84,11 @@ function PalsPage() {
           <p className="mt-1 text-sm text-muted">
             {pals.length} on this ship · {Math.max(reachable.size - 1, 0)} in range at hops={config.hops}
           </p>
+          <Button type="button" variant="secondary" className="mt-4" disabled={retrying} onClick={retry}>
+            {retrying ? "Retrying…" : "Retry connections"}
+          </Button>
+          <p className="mt-2 text-xs text-muted">Retry rejected or missing subscriptions to eligible pals. Your hear settings still apply.</p>
+          {retryNote && <p role="status" className="mt-2 text-xs text-muted">{retryNote}</p>}
 
           <form onSubmit={submit} className="mt-5 flex flex-col gap-2 sm:flex-row">
             <Input
@@ -89,6 +118,7 @@ function PalsPage() {
                     <p className="truncate font-mono text-sm">{pal.ship}</p>
                     <p className="font-mono text-[11px] text-subtle">
                       {pal.target && pal.leech ? "mutual" : pal.target ? "target" : "leech"}
+                      {pal.connection ? ` · ${pal.connection}` : ""}
                       {DISPLAY_NAMES[pal.ship] ? ` · ${DISPLAY_NAMES[pal.ship]}` : ""}
                     </p>
                   </div>

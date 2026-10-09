@@ -157,6 +157,10 @@
   ^-  card:agent:gall
   [%give %fact [/~/gossip/config]~ %gossip-config !>(config)]
 ::
+++  retry
+  ^-  card:agent:gall
+  [%give %fact [/~/gossip/retry]~ %noun !>(~)]
+::
 ++  read-config
   |=  bowl:gall
   ^-  config
@@ -227,6 +231,8 @@
       ?.  =(~ t.int)
         ~&  [gossip+dap.bowl %too-many-internal-targets int]
         ~|([%too-many-internal-targets int] !!)
+      ?:  =(/~/gossip/retry path)
+        [(weld watch-targets caz) state]
       ?:  =(/~/gossip/config path)
         ~|  [%weird-fact-on-config p.cage.p.card]
         ?>  =(%gossip-config p.cage.p.card)

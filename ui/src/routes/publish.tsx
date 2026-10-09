@@ -3,7 +3,7 @@ import { useState, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Textarea } from "@/components/ui/input";
 import { useOmart } from "@/lib/omart/store";
-import { KINDS, type PluginKind } from "@/lib/omart/types";
+import { KINDS, LISTING_ID_PATTERN, LISTING_ID_HELP, type PluginKind } from "@/lib/omart/types";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/publish")({ component: PublishPage });
@@ -67,7 +67,15 @@ function PublishPage() {
       </p>
 
       <form onSubmit={onSubmit} className="mt-8 space-y-5">
-        <Field name="id" label="id" placeholder="yourname.plugin" />
+        <div>
+          <Label htmlFor="id">listing ID</Label>
+          <Input id="id" name="id" placeholder="yourname-plugin" pattern={LISTING_ID_PATTERN}
+            title={LISTING_ID_HELP} required aria-describedby="id-help" className="mt-1.5" />
+          <p id="id-help" className="mt-2 text-xs leading-relaxed text-muted">
+            {LISTING_ID_HELP} This is your Omart listing key. Your repository’s manifest.json
+            keeps its own plugin ID; Omarchy installs from the Git URL below.
+          </p>
+        </div>
         <Field name="name" label="name" placeholder="Plugin name" />
         <Field name="git" label="git" placeholder="https://github.com/you/plugin.git" />
         <div className="grid gap-5 sm:grid-cols-2">

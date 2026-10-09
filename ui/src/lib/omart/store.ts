@@ -3,11 +3,14 @@ import { OUR_SHIP } from "./ships";
 import {
   DEFAULT_CONFIG,
   KINDS,
+  LISTING_ID_HELP,
+  validListingId,
   type GossipConfig,
   type GossipEvent,
   type HeardPlugin,
   type HearMode,
   type PalRecord,
+  type PalsStatus,
   type PluginKind,
   type PluginListing,
   type Ship,
@@ -26,12 +29,16 @@ type OmartState = {
   hydrated: boolean;
   our: Ship;
   pals: PalRecord[];
+  palsStatus: PalsStatus | null;
+  palsError: string | null;
   plugins: HeardPlugin[];
   saved: Set<string>;
   config: GossipConfig;
   log: GossipEvent[];
   hydrate: () => void;
   refresh: () => Promise<void>;
+  installPals: () => Promise<string | null>;
+  retryConnections: () => Promise<string | null>;
   meet: (who: Ship) => Promise<string | null>;
   part: (who: Ship) => Promise<string | null>;
   toggleSave: (id: string) => void;
@@ -42,9 +49,20 @@ type OmartState = {
 
 function asPal(raw: unknown): PalRecord | null {
   if (!raw || typeof raw !== "object") return null;
-  const o = raw as { ship?: unknown; target?: unknown; leech?: unknown };
+  const o = raw as { ship?: unknown; target?: unknown; leech?: unknown; connection?: unknown };
   if (typeof o.ship !== "string" || !o.ship.startsWith("~")) return null;
-  return { ship: o.ship, target: !!o.target, leech: !!o.leech };
+  const pal: PalRecord = { ship: o.ship, target: !!o.target, leech: !!o.leech };
+  if (o.connection === "connected" || o.connection === "connecting" || o.connection === "disconnected") {
+    pal.connection = o.connection;
+  }
+  return pal;
+}
+
+function asPalsStatus(raw: unknown): PalsStatus | null {
+  if (!raw || typeof raw !== "object") return null;
+  const o = raw as Record<string, unknown>;
+  if (!["missing", "installing", "waiting", "starting", "suspended", "ready"].includes(String(o.phase))) return null;
+  return { phase: o.phase as PalsStatus["phase"], source: typeof o.source === "string" ? o.source : null };
 }
 
 function asKind(t: unknown): PluginKind | null {
@@ -96,22 +114,26 @@ function asConfig(raw: unknown): GossipConfig | null {
 }
 
 async function api<T>(path: string, init?: RequestInit): Promise<{ ok: true; data: T } | { ok: false; error: string; status: number }> {
-  const r = await fetch(`${API}${path}`, { credentials: "include", ...init, headers: { ...HDRS, ...(init?.headers ?? {}) } });
-  const text = await r.text();
-  let data: unknown = null;
   try {
-    data = text ? JSON.parse(text) : null;
+    const r = await fetch(`${API}${path}`, { credentials: "include", ...init, headers: { ...HDRS, ...(init?.headers ?? {}) } });
+    const text = await r.text();
+    let data: unknown = null;
+    try {
+      data = text ? JSON.parse(text) : null;
+    } catch {
+      data = null;
+    }
+    if (!r.ok) {
+      const err =
+        data && typeof data === "object" && "error" in data && typeof (data as { error: unknown }).error === "string"
+          ? (data as { error: string }).error
+          : r.statusText || "request failed";
+      return { ok: false, error: err, status: r.status };
+    }
+    return { ok: true, data: data as T };
   } catch {
-    data = null;
+    return { ok: false, error: "Could not reach this ship. Try again.", status: 0 };
   }
-  if (!r.ok) {
-    const err =
-      data && typeof data === "object" && "error" in data && typeof (data as { error: unknown }).error === "string"
-        ? (data as { error: string }).error
-        : r.statusText || "request failed";
-    return { ok: false, error: err, status: r.status };
-  }
-  return { ok: true, data: data as T };
 }
 
 function persist(partial: PersistShape) {
@@ -137,6 +159,8 @@ export const useOmart = create<OmartState>((set, get) => ({
   hydrated: false,
   our: OUR_SHIP,
   pals: [],
+  palsStatus: null,
+  palsError: null,
   plugins: [],
   saved: new Set(),
   config: DEFAULT_CONFIG,
@@ -163,22 +187,40 @@ export const useOmart = create<OmartState>((set, get) => ({
   refresh: async () => {
     const ourGuess = get().our;
     const [palsRes, listRes, cfgRes] = await Promise.all([
-      api<{ our?: string; pals?: unknown[] }>("/pals.json"),
+      api<{ our?: string; pals?: unknown[]; status?: unknown } | null>("/pals.json"),
       api<unknown[]>("/listings.json"),
       api<unknown>("/config.json"),
     ]);
     const our =
-      palsRes.ok && typeof palsRes.data.our === "string" && palsRes.data.our.startsWith("~")
+      palsRes.ok && typeof palsRes.data?.our === "string" && palsRes.data.our.startsWith("~")
         ? palsRes.data.our
         : ourGuess;
-    const pals = palsRes.ok && Array.isArray(palsRes.data.pals)
+    const pals = palsRes.ok && Array.isArray(palsRes.data?.pals)
       ? palsRes.data.pals.map(asPal).filter((p): p is PalRecord => p !== null)
       : get().pals;
     const plugins = listRes.ok && Array.isArray(listRes.data)
       ? listRes.data.map((row) => asListing(row, our)).filter((p): p is HeardPlugin => p !== null)
       : get().plugins;
     const config = cfgRes.ok ? asConfig(cfgRes.data) ?? get().config : get().config;
-    set({ our, pals, plugins, config });
+    const palsStatus = palsRes.ok ? asPalsStatus(palsRes.data?.status) : null;
+    const palsError = palsRes.ok
+      ? palsStatus ? null : "Could not read %pals status. Check that the Omart agent is up to date and that you are logged in."
+      : palsRes.error;
+    set({ our, pals, plugins, config, palsStatus, palsError });
+  },
+
+  installPals: async () => {
+    const res = await api("/install-pals", { method: "POST", body: "{}" });
+    if (!res.ok) return res.error;
+    await get().refresh();
+    return null;
+  },
+
+  retryConnections: async () => {
+    const res = await api("/retry", { method: "POST", body: "{}" });
+    if (!res.ok) return res.error;
+    await get().refresh();
+    return null;
   },
 
   meet: async (who) => {
@@ -215,6 +257,7 @@ export const useOmart = create<OmartState>((set, get) => ({
   },
 
   publish: async (input) => {
+    if (!validListingId(input.id)) return LISTING_ID_HELP;
     const res = await api<unknown>("/publish", {
       method: "POST",
       body: JSON.stringify({
