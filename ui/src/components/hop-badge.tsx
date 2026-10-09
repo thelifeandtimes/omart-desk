@@ -1,7 +1,7 @@
 import { cn } from "@/lib/utils";
 
 export function HopBadge({ hop, className }: { hop: number; className?: string }) {
-  const label = hop === 0 ? "local" : hop === 1 ? "pal" : `hop ${hop}`;
+  const label = hop < 0 ? "legacy" : hop === 0 ? "local" : hop === 1 ? "pal" : `hop ${hop}`;
   return (
     <span
       className={cn(

@@ -92,3 +92,38 @@ test("listing IDs match Hoon terms and reject dotted manifest IDs before publish
   assert.equal(await useOmart.getState().publish({ id: "yourname.plugin", name: "Test", description: "test",
     git: "https://example.com/test.git", version: "1", author: "test", kinds: ["bar-widget"], tags: [], category: "tools", license: "MIT" }), LISTING_ID_HELP);
 });
+
+test("signed listings retain publisher identity, distance and distinct bookmarks", async () => {
+  const rows = [
+    { id: "shared-plugin", name: "First", ship: "~nec", git: "https://example.com/a", verified: true, hop: 2, via: "~bus", revision: "123" },
+    { id: "shared-plugin", name: "Second", ship: "~tyr", git: "https://example.com/b", verified: true, hop: 1, via: "~tyr", revision: "456" },
+    { id: "legacy", name: "Legacy", ship: "~nec", git: "https://example.com/c" },
+  ];
+  useOmart.setState({ our: "~bus", saved: new Set(["shared-plugin"]) });
+  globalThis.fetch = async (url) => new Response(JSON.stringify(String(url).endsWith("pals.json")
+    ? { our: "~bus", status: { phase: "ready", source: "~nec" }, pals: [] }
+    : String(url).endsWith("config.json") ? { ...DEFAULT_CONFIG, pass: true } : rows));
+  await useOmart.getState().refresh();
+  const state = useOmart.getState();
+  assert.equal(state.plugins.length, 3);
+  assert.equal(state.plugins[0].origin, "~nec");
+  assert.equal(state.plugins[0].hop, 2);
+  assert.equal(state.plugins[0].via, "~bus");
+  assert.equal(state.plugins[0].revision, "123");
+  assert.equal(state.plugins[0].verified, true);
+  assert.deepEqual(state.plugins[0].path, []);
+  assert.equal(state.plugins[2].verified, false);
+  assert.equal(state.plugins[2].hop, -1);
+  assert.deepEqual(state.saved, new Set(["~nec/shared-plugin", "~tyr/shared-plugin"]));
+  assert.equal(state.config.pass, false);
+});
+
+test("retracting our listing preserves another publisher using the same ID", async () => {
+  const template = { id: "shared", name: "Shared", origin: "~bus", git: "https://example.com/repo", version: "1", author: "", description: "", kinds: [], tags: [], category: "tools" as const, license: "MIT", hop: 0, path: [], heardAt: 0, local: true };
+  useOmart.setState({ our: "~bus", plugins: [template, { ...template, origin: "~nec", local: false }],
+    saved: new Set(["~bus/shared", "~nec/shared"]), refresh: async () => {} });
+  globalThis.fetch = async () => new Response(JSON.stringify({ ok: true }));
+  assert.equal(await useOmart.getState().retract("shared"), null);
+  assert.deepEqual(useOmart.getState().plugins.map(p => p.origin), ["~nec"]);
+  assert.deepEqual(useOmart.getState().saved, new Set(["~nec/shared"]));
+});

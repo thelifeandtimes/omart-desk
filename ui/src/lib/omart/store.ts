@@ -5,6 +5,7 @@ import {
   KINDS,
   LISTING_ID_HELP,
   validListingId,
+  listingKey,
   type GossipConfig,
   type GossipEvent,
   type HeardPlugin,
@@ -89,10 +90,13 @@ function asListing(raw: unknown, our: Ship): HeardPlugin | null {
     tags: Array.isArray(o.tags) ? o.tags.filter((t): t is string => typeof t === "string") : [],
     category: "tools",
     license: "MIT",
-    hop: local ? 0 : 1,
-    path: local ? [our] : [our, origin],
+    hop: typeof o.hop === "number" ? o.hop : local ? 0 : -1,
+    path: local ? [our] : [],
     heardAt: 0,
     local,
+    verified: o.verified === true,
+    via: typeof o.via === "string" ? o.via : undefined,
+    revision: typeof o.revision === "string" ? o.revision : undefined,
   };
 }
 
@@ -109,7 +113,7 @@ function asConfig(raw: unknown): GossipConfig | null {
     hops: Math.max(0, Math.min(3, Math.floor(o.hops))),
     hear: hear as HearMode,
     tell: tell as HearMode,
-    pass: !!o.pass,
+    pass: false,
   };
 }
 
@@ -206,7 +210,19 @@ export const useOmart = create<OmartState>((set, get) => ({
     const palsError = palsRes.ok
       ? palsStatus ? null : "Could not read %pals status. Check that the Omart agent is up to date and that you are logged in."
       : palsRes.error;
-    set({ our, pals, plugins, config, palsStatus, palsError });
+    // Move old ID-only bookmarks into the publisher namespace once known.
+    const previousSaved = get().saved;
+    const saved = new Set(previousSaved);
+    let migrated = false;
+    for (const plugin of plugins) {
+      if (previousSaved.has(plugin.id)) {
+        saved.delete(plugin.id);
+        saved.add(listingKey(plugin));
+        migrated = true;
+      }
+    }
+    set({ our, pals, plugins, config, palsStatus, palsError, saved });
+    if (migrated) persist({ saved: [...saved], log: get().log });
   },
 
   installPals: async () => {
@@ -274,7 +290,7 @@ export const useOmart = create<OmartState>((set, get) => ({
     if (!res.ok) return res.error;
     const log = [event("publish", `publish ${input.id}`, { pluginId: input.id, hop: 0, ship: get().our }), ...get().log];
     const saved = new Set(get().saved);
-    saved.add(input.id);
+    saved.add(listingKey({ id: input.id, origin: get().our }));
     set({ log, saved });
     persist({ saved: [...saved], log });
     await get().refresh();
@@ -286,9 +302,9 @@ export const useOmart = create<OmartState>((set, get) => ({
     if (!res.ok) return res.error;
     const log = [event("publish", `retract ${id}`, { pluginId: id, ship: get().our }), ...get().log];
     const saved = new Set(get().saved);
-    saved.delete(id);
+    saved.delete(listingKey({ id, origin: get().our }));
     set({
-      plugins: get().plugins.filter((p) => p.id !== id),
+      plugins: get().plugins.filter((p) => p.id !== id || p.origin !== get().our),
       saved,
       log,
     });
@@ -298,12 +314,12 @@ export const useOmart = create<OmartState>((set, get) => ({
   },
 
   setConfig: async (patch) => {
-    const config = { ...get().config, ...patch };
+    const config = { ...get().config, ...patch, pass: false };
     const res = await api("/config", { method: "POST", body: JSON.stringify(config) });
     if (!res.ok) return res.error;
     const next = asConfig(res.ok ? (res as { data: unknown }).data : null) ?? config;
     const log = [
-      event("config", `hops=${next.hops} hear=${next.hear} tell=${next.tell} pass=${next.pass ? "&" : "|"}`),
+      event("config", `hops=${next.hops} hear=${next.hear} tell=${next.tell}`),
       ...get().log,
     ];
     set({ config: next, log });

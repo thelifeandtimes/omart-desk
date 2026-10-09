@@ -7,16 +7,35 @@ import { Sigil } from "@/components/sigil";
 import { Button } from "@/components/ui/button";
 import { DISPLAY_NAMES } from "@/lib/omart/ships";
 import { useOmart } from "@/lib/omart/store";
+import { listingKey } from "@/lib/omart/types";
 
-export const Route = createFileRoute("/plugin/$id")({ component: PluginPage });
+export const Route = createFileRoute("/plugin/$id")({
+  validateSearch: (search: Record<string, unknown>): { ship?: string } => ({
+    ship: typeof search.ship === "string" ? search.ship : undefined,
+  }),
+  component: PluginPage,
+});
 
 function PluginPage() {
   const { id } = Route.useParams();
-  const plugin = useOmart((s) => s.plugins.find((p) => p.id === id));
-  const saved = useOmart((s) => s.saved.has(id));
+  const { ship } = Route.useSearch();
+  const plugins = useOmart((s) => s.plugins);
+  const matches = plugins.filter((p) => p.id === id);
+  const plugin = ship ? matches.find((p) => p.origin === ship) : matches.length === 1 ? matches[0] : undefined;
+  const saved = useOmart((s) => plugin ? s.saved.has(listingKey(plugin)) : false);
   const toggleSave = useOmart((s) => s.toggleSave);
   const retract = useOmart((s) => s.retract);
   const our = useOmart((s) => s.our);
+
+  if (!ship && matches.length > 1) {
+    return <section className="max-w-lg">
+      <h1 className="font-display text-3xl italic">Choose a publisher</h1>
+      <p className="mt-3 text-sm text-muted">More than one ship publishes a listing named {id}.</p>
+      <ul className="mt-5 space-y-3">{matches.map((p) => <li key={listingKey(p)}>
+        <Link to="/plugin/$id" params={{ id }} search={{ ship: p.origin }} className="font-mono text-sm underline">{p.origin}</Link>
+      </li>)}</ul>
+    </section>;
+  }
 
   if (!plugin) {
     return (
@@ -24,7 +43,8 @@ function PluginPage() {
         <p className="font-mono text-xs text-subtle">not in range</p>
         <h1 className="mt-2 font-display text-3xl italic">This listing has not reached you</h1>
         <p className="mt-3 text-sm text-muted">
-          It may sit beyond your hop limit, or on a ship you have not met. Add pals or raise hops.
+          It may have been withdrawn, be beyond its publisher’s hop limit, or not have reached
+          your pals yet. Use Sync listings on the Pals page to catch up.
         </p>
         <Button asChild variant="secondary" className="mt-6">
           <Link to="/">Back to bazaar</Link>
@@ -32,8 +52,6 @@ function PluginPage() {
       </div>
     );
   }
-
-  const path = plugin.path;
 
   return (
     <article className="max-w-3xl">
@@ -65,7 +83,7 @@ function PluginPage() {
         <Button
           type="button"
           variant={saved ? "default" : "secondary"}
-          onClick={() => toggleSave(plugin.id)}
+          onClick={() => toggleSave(listingKey(plugin))}
         >
           {saved ? <BookmarkCheck /> : <Bookmark />}
           {saved ? "Saved" : "Keep"}
@@ -92,21 +110,15 @@ function PluginPage() {
       </section>
 
       <section className="mt-10">
-        <h2 className="font-mono text-[11px] tracking-wide text-subtle uppercase">Gossip path</h2>
-        <ol className="mt-4 flex flex-wrap items-center gap-2">
-          {path.map((ship, i) => (
-            <li key={`${ship}-${i}`} className="flex items-center gap-2">
-              {i > 0 && <span className="text-subtle">→</span>}
-              <span className="inline-flex items-center gap-2 rounded-md bg-raised px-2 py-1.5 shadow-[var(--shadow-border)]">
-                <Sigil ship={ship} size={20} />
-                <span className="font-mono text-[11px]">{ship}</span>
-              </span>
-            </li>
-          ))}
-        </ol>
+        <h2 className="font-mono text-[11px] tracking-wide text-subtle uppercase">Publisher</h2>
+        <div className="mt-4 flex items-center gap-2"><Sigil ship={plugin.origin} size={28} />
+          <span className="font-mono text-sm">{plugin.origin}</span>
+        </div>
         <p className="mt-3 text-sm text-muted">
-          Originated on {plugin.origin}
-          {DISPLAY_NAMES[plugin.origin] ? ` (${DISPLAY_NAMES[plugin.origin]})` : ""}. Heard at hop {plugin.hop}.
+          {plugin.verified ? "Signature verified against the publisher’s Urbit identity." :
+            "Legacy listing: its claimed publisher has not yet supplied a signed update. This copy is not relayed."}
+          {plugin.verified && !plugin.local && plugin.via ? ` Received via ${plugin.via}, ${plugin.hop} hop${plugin.hop === 1 ? "" : "s"} from the publisher.` : ""}
+          {DISPLAY_NAMES[plugin.origin] ? ` (${DISPLAY_NAMES[plugin.origin]})` : ""}
         </p>
       </section>
 

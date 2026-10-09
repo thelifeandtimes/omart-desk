@@ -68,7 +68,14 @@ export type HeardPlugin = PluginListing & {
   path: Ship[];
   heardAt: number;
   local: boolean;
+  verified?: boolean;
+  via?: Ship;
+  revision?: string;
 };
+
+export function listingKey(plugin: Pick<PluginListing, "id" | "origin">) {
+  return `${plugin.origin}/${plugin.id}`;
+}
 
 export type GossipEvent = {
   id: string;

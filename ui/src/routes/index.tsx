@@ -5,14 +5,13 @@ import { useMemo, useState } from "react";
 import { PluginCard } from "@/components/plugin-card";
 import { Input } from "@/components/ui/input";
 import { useOmart } from "@/lib/omart/store";
-import { CATEGORIES, KINDS, type Category, type PluginKind } from "@/lib/omart/types";
+import { CATEGORIES, KINDS, listingKey, type Category, type PluginKind } from "@/lib/omart/types";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/")({ component: Bazaar });
 
 function Bazaar() {
   const plugins = useOmart((s) => s.plugins);
-  const config = useOmart((s) => s.config);
   const saved = useOmart((s) => s.saved);
   const [q, setQ] = useState("");
   const [kind, setKind] = useState<PluginKind | "all">("all");
@@ -22,7 +21,7 @@ function Bazaar() {
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
     return plugins.filter((p) => {
-      if (onlySaved && !saved.has(p.id)) return false;
+      if (onlySaved && !saved.has(listingKey(p))) return false;
       if (kind !== "all" && !p.kinds.includes(kind)) return false;
       if (category !== "all" && p.category !== category) return false;
       if (!needle) return true;
@@ -44,8 +43,8 @@ function Bazaar() {
           Plugins that reach you
         </h1>
         <p className="mt-3 max-w-xl text-sm leading-relaxed text-muted md:text-[15px]">
-          Listings publish on this ship and hop through %pals. With hops={config.hops} you hear
-          {config.hops <= 1 ? " direct pals" : " pals of pals"}. Git URLs are unsandboxed — read the repo before you enable one.
+          Signed listings travel through %pals, keeping their original publisher’s identity.
+          Your pals share discoveries within each publisher’s hop limit and relay signed withdrawals.
         </p>
       </header>
 
@@ -83,12 +82,12 @@ function Bazaar() {
 
       {filtered.length === 0 ? (
         <p className="mt-16 max-w-md text-sm text-muted">
-          Nothing in range. Add pals or raise hops so rumors can travel farther.
+          No matching listings. Add pals or use Sync listings on the Pals page to catch up.
         </p>
       ) : (
         <div className="mt-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {filtered.map((plugin, i) => (
-            <PluginCard key={plugin.id} plugin={plugin} delay={Math.min(i, 12) * 40} />
+            <PluginCard key={listingKey(plugin)} plugin={plugin} delay={Math.min(i, 12) * 40} />
           ))}
         </div>
       )}

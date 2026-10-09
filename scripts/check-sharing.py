@@ -21,12 +21,15 @@ PORTS = {"nec": 8091, "bus": 8092, "tyr": 8093}
 DEFAULT = {"hops": 1, "hear": "targets", "tell": "targets", "pass": False}
 
 
-def conn(ship, source):
+def conn(ship, source, dependencies=()):
     socket = ROOT / ".dev/fakenet" / ship / ".urb/conn.sock"
     if ship not in PORTS or not socket.is_socket():
         raise RuntimeError(f"Missing local fakeship: {ship}")
     source = source.replace("\\", "\\\\").replace("'", "\\'")
-    request = f"[0 %fyrd %base %khan-eval %noun %ted-eval '{source}']\n"
+    argument = f"'{source}'"
+    if dependencies:
+        argument = f"[{argument} ~[{' '.join(dependencies)}]]"
+    request = f"[0 %fyrd %base %khan-eval %noun %ted-eval {argument}]\n"
 
     def run(args, data):
         return subprocess.run(args, input=data, stdout=subprocess.PIPE,
@@ -87,7 +90,7 @@ def subscriptions(ship):
 
 def watching(ship, peer):
     # The rendered wire occurs only in wex (outbound watches), not sup.
-    return f"%gossip %gossip '~{peer}'" in subscriptions(ship)
+    return f"%omart %peer '~{peer}'" in subscriptions(ship)
 
 
 def main():
@@ -152,7 +155,7 @@ def main():
         print("PASS: a retained target remains subscribed when its leech status changes", flush=True)
 
         # No pal event occurs when only the publisher's tell policy changes.
-        # A previously rejected subscriber otherwise waits for the 30m timer.
+        # A rejected subscriber otherwise waits for the five-minute catch-up timer.
         bus.api("part", {"ship": "~nec"})
         bus.api("config", {**DEFAULT, "tell": "mutuals"})
         wait_for("policy change removes nec's subscription", lambda: not watching("nec", "bus"))
@@ -202,7 +205,7 @@ def main():
         assert local not in bus.ids() and local not in tyr.ids()
         nec.api("retract", {"id": local})
         assert local not in nec.ids()
-        print("PASS: zero-hop publish/retract succeeds locally without broadcasting", flush=True)
+        print("PASS: zero-hop publication stays local; withdrawal succeeds", flush=True)
     finally:
         # Restore all test edges for cleanup, then restore the original graph.
         for ship in ships.values():

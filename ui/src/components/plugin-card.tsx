@@ -9,6 +9,7 @@ export function PluginCard({ plugin, delay = 0 }: { plugin: HeardPlugin; delay?:
     <Link
       to="/plugin/$id"
       params={{ id: plugin.id }}
+      search={{ ship: plugin.origin }}
       className="group flex flex-col rounded-xl bg-surface p-2 shadow-[var(--shadow-border)] transition-[box-shadow,transform] duration-200 ease-out hover:shadow-[var(--shadow-border-hover)] motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-2"
       style={{ animationDelay: `${delay}ms`, animationFillMode: "both" }}
     >
@@ -23,6 +24,7 @@ export function PluginCard({ plugin, delay = 0 }: { plugin: HeardPlugin; delay?:
           <div className="min-w-0">
             <h2 className="font-display text-lg leading-snug tracking-tight text-fg">{plugin.name}</h2>
             <p className="mt-0.5 font-mono text-[11px] text-subtle">{plugin.id}</p>
+            <p className="mt-1 font-mono text-[11px] text-muted">{plugin.origin} · {plugin.verified ? "signed" : "legacy, unverified"}</p>
           </div>
           <Sigil ship={plugin.origin} size={28} />
         </div>

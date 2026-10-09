@@ -40,19 +40,16 @@ With the defaults, both ships must add each other as pals, and the publisher
 must have hops greater than zero. Installing Omart from a ship does not make it
 a pal. The Pals page shows whether your subscription to each peer is connected.
 
-Click **Retry connections**, or run this after installing the current version:
+Click **Sync listings**, or run:
 
 ```hoon
 :omart &omart-action [%retry ~]
 ```
 
-This immediately retries missing subscriptions allowed by your hear setting,
-without changing pals, settings, listings, or existing subscriptions. A rejected
-watch otherwise waits up to 30 minutes for the next automatic retry. If already
-connected, the command leaves that connection alone.
-
-For an older Omart version, change **hear** to another mode and then restore your
-original mode to trigger reconciliation. To check installations manually:
+This retries eligible subscriptions and requests signed cache catch-up on existing
+connections. Automatic catch-up runs every five minutes. Publishers and relays
+must all run the updated signed protocol. Old unsigned peers cannot participate.
+To check installations manually:
 
 ```hoon
 +vats %omart
@@ -67,9 +64,13 @@ using its Git URL and manifest.
 ## What you get
 
 - A Landscape tile at `/apps/omart` with Bazaar, Pals, and Publish.
-- Listings that hop along the ships you have added as pals. The default is one hop, hear and tell limited to those pals, pass off.
-- Publish and retract from the ship you are logged into. A retract is gossiped, so pals drop the listing too.
+- Listings that hop along the ships you have added as pals. The default is one hop, with hear and tell limited to those pals. Use two or three hops for wider publication.
+- Origin-signed publications and withdrawals, relayed live and from caches. Tombstones prevent old copies from being replayed after withdrawal.
+- Persistent publisher identity and separate listing namespaces for each ship; no anonymous proxy mode.
 - Meet and part write to the `%pals` agent already on the ship. Omart does not ship its own pals agent.
+
+See [Signed sharing](docs/SHARING.md) for authentication, relay rules, withdrawal
+replay, key changes, and the upgrade boundary.
 
 ## Why
 
@@ -127,7 +128,10 @@ a suspended desk without changing its source, and is a no-op while installing
 or already running. Its success acknowledges the request; poll `pals.json` for
 completion. Requests rejected by Hood return an error.
 
-Gossip defaults: hops 1, hear and tell `%targets`, pass off. The Pals page pokes Gall to change them.
+Sharing defaults: hops 1, hear and tell `%targets`. The Pals page changes them.
+The legacy `pass` API field is always false. Listing responses include `verified`,
+actual `hop`, immediate relay `via`, and a string `revision` for signed records.
+Listing identity is `(ship, id)`, not `id` alone.
 
 ## Contributing
 

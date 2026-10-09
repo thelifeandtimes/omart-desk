@@ -10,6 +10,7 @@ export const Route = createFileRoute("/publish")({ component: PublishPage });
 
 function PublishPage() {
   const publish = useOmart((s) => s.publish);
+  const our = useOmart((s) => s.our);
   const navigate = useNavigate();
   const [error, setError] = useState<string | null>(null);
   const [kinds, setKinds] = useState<PluginKind[]>(["bar-widget"]);
@@ -53,7 +54,7 @@ function PublishPage() {
         setError(err);
         return;
       }
-      void navigate({ to: "/plugin/$id", params: { id } });
+      void navigate({ to: "/plugin/$id", params: { id }, search: { ship: our } });
     });
   }
 
@@ -62,8 +63,8 @@ function PublishPage() {
       <p className="font-mono text-[11px] tracking-wide text-subtle uppercase">publish</p>
       <h1 className="mt-2 font-display text-4xl tracking-tight italic">Publish a listing</h1>
       <p className="mt-3 text-sm leading-relaxed text-muted">
-        Your listing hops out through pals as a rumor with a git URL. Bump the version if you mean a
-        new one — identical listings are ignored.
+        Your ship signs each publication with a new revision. Your pals can relay and cache it
+        within your hop limit. A signed withdrawal tells them to remove it and notify their peers.
       </p>
 
       <form onSubmit={onSubmit} className="mt-8 space-y-5">

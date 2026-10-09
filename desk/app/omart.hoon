@@ -1,10 +1,8 @@
 ::  omart: omarchy plugin bazaar, gossiped among pals
 ::
 /-  *omart
-/+  gossip, default-agent, dbug, server, pals
+/+  default-agent, dbug, server, pals, op=omart-protocol, network=omart-network
 ::
-/$  grab-plugin  %noun  %omart-plugin
-/$  grab-gone    %noun  %omart-gone
 ::
 |%
 +$  state-0
@@ -17,6 +15,18 @@
       listings=(map id plugin)
       retracted=(map id ship)
       cfg=gossip-cfg
+  ==
+::  Signed records and tombstones are keyed by publisher as well as listing ID.
++$  state-2
+  $:  %2
+      cfg=gossip-cfg
+      clock=@ud
+      cache=(map listing-key entry)
+      legacy=(map listing-key plugin)
+      pending=(list [via=ship received=@da env=envelope])
+      tracked=(set ship)
+      pagers=(map ship (unit listing-key))
+      next=@da
   ==
 +$  card  card:agent:gall
 ++  default-cfg  `gossip-cfg`[1 %targets %targets |]
@@ -104,11 +114,15 @@
   |=  p=plugin
   ^-  (each plugin @t)
   ?.  ((sane %tas) id.p)  [%| 'listing id must start with a lowercase letter; use lowercase letters, digits and hyphens']
+  ?:  (gth (met 3 id.p) 128)  [%| 'listing id is too long']
   ?.  (git-ok git.p)      [%| 'git must be an http(s) URL']
   ?:  =(0 (met 3 name.p))  [%| 'name required']
   ?:  =(0 (met 3 description.p))  [%| 'description required']
   ?:  =(~ kinds.p)  [%| 'need a kind']
+  ?:  (gth (lent kinds.p) 6)  [%| 'too many kinds']
   ?:  (gth (lent tags.p) max-tags)  [%| 'too many tags']
+  ?.  (levy tags.p |=(t=term &(((sane %tas) t) (lte (met 3 t) 128))))
+    [%| 'invalid tag']
   :-  %&
   %_  p
     name         (clip name.p max-name)
@@ -133,10 +147,33 @@
       tags+a+(turn tags.plugin |=(t=term s+t))
       when+s+(scot %da when.plugin)
   ==
+++  visible-listings
+  |=  [cache=(map listing-key entry) legacy=(map listing-key plugin)]
+  ^-  (map listing-key plugin)
+  =/  out  legacy
+  =/  records  ~(tap by cache)
+  |-  ^-  (map listing-key plugin)
+  ?~  records  out
+  =/  [key=listing-key val=entry]  i.records
+  =.  out  (~(del by out) key)
+  =?  out  &(trusted.val ?=(^ content.body.data.val))
+    (~(put by out) key u.content.body.data.val)
+  $(records t.records)
 ++  listings-json
-  |=  m=(map id plugin)
+  |=  [cache=(map listing-key entry) legacy=(map listing-key plugin)]
   ^-  json
-  a+(turn ~(val by m) plugin-json)
+  :-  %a
+  %+  turn  ~(tap by (visible-listings cache legacy))
+  |=  [key=listing-key val=plugin]
+  =/  jon  (plugin-json val)
+  ?>  ?=(%o -.jon)
+  =/  had  (~(get by cache) key)
+  =.  p.jon  (~(put by p.jon) 'verified' b+?=(^ had))
+  ?~  had  jon
+  =.  p.jon  (~(put by p.jon) 'hop' (numb:enjs:format distance.u.had))
+  =.  p.jon  (~(put by p.jon) 'via' s+(scot %p via.u.had))
+  =.  p.jon  (~(put by p.jon) 'revision' s+(scot %ud revision.body.data.u.had))
+  jon
 ++  cfg-json
   |=  cfg=gossip-cfg
   ^-  json
@@ -145,12 +182,12 @@
   :~  hops+(numb hops.cfg)
       hear+s+hear.cfg
       tell+s+tell.cfg
-      pass+b+pass.cfg
+      pass+b+|
   ==
 ++  pal-json
   |=  [=bowl:gall targs=(set @p) leech=(set @p) who=@p]
   ^-  json
-  =/  sub  (~(get by wex.bowl) [/~/gossip/gossip/(scot %p who) who dap.bowl])
+  =/  sub  (~(get by wex.bowl) [/omart/peer/(scot %p who) who dap.bowl])
   =,  enjs:format
   %-  pairs
   :~  ship+s+(scot %p who)
@@ -266,23 +303,7 @@
       %targets  %targets
       %mutuals  %mutuals
     ==
-  =/  pass=?  |
-  =?  pass  &(?=(^ pass-j) ?=(%b -.u.pass-j))
-    p.u.pass-j
-  `[hops hear tell pass]
-++  take-plugin
-  |=  [listings=(map id plugin) retracted=(map id ship) p=plugin]
-  ^-  (unit (map id plugin))
-  =/  had  (~(get by listings) id.p)
-  ?^  had
-    ?.  =(ship.u.had ship.p)  ~
-    `(~(put by listings) id.p p)
-  ?:  (~(has by retracted) id.p)
-    =/  who  (~(got by retracted) id.p)
-    ?.  =(who ship.p)  ~
-    `(~(put by listings) id.p p)
-  ?:  (gte ~(wyt by listings) max-listings)  ~
-  `(~(put by listings) id.p p)
+  `[hops hear tell |]
 ++  static
   |=  [ct=@t =octs]
   ^-  simple-payload:http
@@ -319,11 +340,11 @@
       [%pass /eyre/apps %arvo %e %connect [~ /apps/[dap.bowl]] dap.bowl]
   ==
 ++  handle-get
-  |=  [=bowl:gall listings=(map id plugin) cfg=gossip-cfg req=inbound-request:eyre]
+  |=  [=bowl:gall cache=(map listing-key entry) legacy=(map listing-key plugin) cfg=gossip-cfg req=inbound-request:eyre]
   ^-  simple-payload:http
   =/  url  (trip url.request.req)
   ?:  ?=(^ (find "listings.json" url))
-    (json-ok (listings-json listings))
+    (json-ok (listings-json cache legacy))
   ?:  ?=(^ (find "pals.json" url))
     ?.  authenticated.req
       [307 ['location' '/~/login?redirect=/apps/omart/pals']~]~
@@ -339,47 +360,211 @@
   ?:  ?=(^ (find "assets/app.css" url))
     (static 'text/css' (clay-file bowl /web/assets/app/css))
   (static 'text/html' (clay-file bowl /web/index/html))
+++  helpers
+  |_  [=bowl:gall state-2]
+  +*  state  +<+
+      net  ~(. network bowl cfg cache)
+  ++  new-pagers
+    ^-  (map ship (unit listing-key))
+    %-  ~(gas by *(map ship (unit listing-key)))
+    (turn ~(tap in wanted:net) |=(s=ship [s ~]))
+  ::
+  ++  startup
+    ^-  (quip card _state)
+    =.  cfg  cfg(pass |)
+    =.  next  (add now.bowl ~m5)
+    =.  pagers  new-pagers
+    =^  refreshed  state  refresh-owned
+    :_  state
+    ;:  weld
+      refreshed
+      (eyre-cards bowl)
+      (reconcile:net &)
+      `(list card)`~[[%pass /omart/keys/(scot %p our.bowl) %arvo %j %public-keys (silt ~[our.bowl])]]
+      `(list card)`~[[%pass /omart/timer/(scot %da next) %arvo %b %wait next]]
+    ==
+  ::
+  ++  make-local
+    |=  [key=id content=(unit plugin) budget=@ud]
+    ^-  (quip card _state)
+    =.  clock  (max +(clock) now.bowl)
+    =/  signed  (seal:op our.bowl now.bowl key clock budget content)
+    ?.  (shape:op signed)  [~ state]
+    =/  item=entry  [signed 0 our.bowl &]
+    =.  cache  (~(put by cache) [our.bowl key] item)
+    =.  legacy  (~(del by legacy) [our.bowl key])
+    [(broadcast:net item our.bowl) state]
+  ::
+  ++  refresh-owned
+    ^-  (quip card _state)
+    =/  ego  (scot %p our.bowl)
+    =/  wen  (scot %da now.bowl)
+    =/  life  .^(@ud %j /[ego]/life/[wen]/[ego])
+    =/  era  ?:(=(%pawn (clan:title our.bowl)) 0 .^(@ud %j /[ego]/rift/[wen]/[ego]))
+    =/  rows  ~(tap by cache)
+    =|  cards=(list card)
+    |-
+    ?~  rows  [cards state]
+    =/  [key=listing-key val=entry]  i.rows
+    ?:  !=(origin.key our.bowl)  $(rows t.rows)
+    ?:  &(=(life life.body.data.val) =(era era.body.data.val))
+      $(rows t.rows)
+    =^  more  state  (make-local id.key content.body.data.val hops.body.data.val)
+    $(rows t.rows, cards (weld cards more))
+  ::
+  ++  ingest
+    |=  [via=ship env=envelope]
+    ^-  (quip card _state)
+    =/  key  (key:op data.env)
+    ?.  (shape:op data.env)  [~ state]
+    ?.  ?|  ?=(~ content.body.data.env)
+            ?&  (gth distance.env 0)
+                (lte distance.env hops.body.data.env)
+                ?:(=(via origin.key) =(distance.env 1) (gte distance.env 2))
+            ==
+        ==
+      [~ state]
+    (ingest-checked via env)
+  ::
+  ++  ingest-checked
+    |=  [via=ship env=envelope]
+    ^-  (quip card _state)
+    =/  key  (key:op data.env)
+    =/  auth  (authenticate:op our.bowl now.bowl data.env)
+    ?~  auth
+      ?:  (gte (lent pending) 128)  [~ state]
+      ?:  (levy pending |=(p=[via=ship received=@da env=envelope] !=(env.p env)))
+        =.  pending  [[via now.bowl env] pending]
+        ?:  (~(has in tracked) origin.key)  [~ state]
+        =.  tracked  (~(put in tracked) origin.key)
+        :_  state
+        [%pass /omart/keys/(scot %p origin.key) %arvo %j %public-keys (silt ~[origin.key])]~
+      [~ state]
+    ?.  u.auth  [~ state]
+    =/  old  (~(get by cache) key)
+    ?^  old
+      ?.  (newer:op data.env data.u.old)
+        ?.  &(=(body.data.env body.data.u.old) trusted.u.old (lth distance.env distance.u.old))
+          [~ state]
+        (store-entry via env)
+      (store-entry via env)
+    (store-entry via env)
+  ::
+  ++  store-entry
+    |=  [via=ship env=envelope]
+    ^-  (quip card _state)
+    =/  key  (key:op data.env)
+    =/  item=entry  [data.env ?:(?=(~ content.body.data.env) 0 distance.env) via &]
+    =.  cache  (~(put by cache) key item)
+    =.  legacy  (~(del by legacy) key)
+    =?  clock  =(our.bowl origin.key)
+      (max clock revision.body.data.env)
+    =/  cards  (broadcast:net item via)
+    ?:  |(=(our.bowl origin.key) =(%pawn (clan:title origin.key)) (~(has in tracked) origin.key))
+      [cards state]
+    =.  tracked  (~(put in tracked) origin.key)
+    :-  [[%pass /omart/keys/(scot %p origin.key) %arvo %j %public-keys (silt ~[origin.key])] cards]
+    state
+  ::
+  ++  receive
+    |=  [via=ship page=sync-page]
+    ^-  (quip card _state)
+    ?.  (~(has in wanted:net) via)  [~ state]
+    ?:  (gth (lent records.page) 8)  [~ state]
+    =|  cards=(list card)
+    =/  rows  records.page
+    |-
+    ?^  rows
+      =^  more  state  (ingest via i.rows)
+      $(rows t.rows, cards (weld cards more))
+    ?:  =(%live mode.page)  [cards state]
+    =/  expected  (~(get by pagers) via)
+    ?~  expected  [cards state]
+    ?.  =(u.expected cursor.page)  [cards state]
+    ?~  more.page
+      [cards state(pagers (~(del by pagers) via))]
+    ?~  records.page  [cards state]
+    ?.  =(u.more.page (key:op data:(rear records.page)))  [cards state]
+    ?^  cursor.page
+      ?.  &(!=(u.cursor.page u.more.page) (gor u.cursor.page u.more.page))  [cards state]
+      [(snoc cards (request:net via more.page)) state(pagers (~(put by pagers) via more.page))]
+    [(snoc cards (request:net via more.page)) state(pagers (~(put by pagers) via more.page))]
+  ::
+  ++  retry-pending
+    ^-  (quip card _state)
+    =/  rows  pending
+    =.  pending  ~
+    =|  cards=(list card)
+    |-
+    ?~  rows  [cards state]
+    =/  p  i.rows
+    ?:  (gth now.bowl (add received.p ~m30))  $(rows t.rows)
+    ?.  (~(has in wanted:net) via.p)  $(rows t.rows)
+    =^  more  state  (ingest via.p env.p)
+    ::  Retrying must not extend an unknown-key record's original deadline.
+    =.  pending
+      (turn pending |=(q=[via=ship received=@da env=envelope] ?:(=(env.q env.p) q(received received.p) q)))
+    $(rows t.rows, cards (weld cards more))
+  ::
+  --
 --
 ::
-=|  state-1
+=|  state-2
 =*  state  -
-::
-%-  %+  agent:gossip
-      [1 %targets %targets |]
-    %-  ~(gas by *(map mark $-(* vase)))
-    :~  [%omart-plugin |=(n=* !>((grab-plugin n)))]
-        [%omart-gone |=(n=* !>((grab-gone n)))]
-    ==
 ::
 %-  agent:dbug
 ^-  agent:gall
 |_  =bowl:gall
 +*  this  .
     def   ~(. (default-agent this %|) bowl)
+    net   ~(. network bowl cfg cache)
+    up    ~(. helpers bowl state)
 ::
 ++  on-init
   ^-  (quip card _this)
-  :_  this(cfg default-cfg)
-  %+  weld  (eyre-cards bowl)
-  [(configure:gossip default-cfg)]~
+  =.  cfg  default-cfg
+  =^  cards  state  startup:up
+  [cards this]
 ::
 ++  on-save  !>(state)
 ++  on-load
   |=  ole=vase
   ^-  (quip card _this)
-  ?:  =(%1 -.q.ole)
-    :_  this(state !<(state-1 ole))
-    (eyre-cards bowl)
-  ?:  =(%0 -.q.ole)
-    =/  old  !<(state-0 ole)
-    =/  ret=(map id ship)
-      %-  ~(gas by *(map id ship))
-      (turn ~(tap in retracted.old) |=(=id [id our.bowl]))
-    :_  this(state [%1 listings.old ret default-cfg])
-    %+  weld  (eyre-cards bowl)
-    [(configure:gossip default-cfg)]~
-  :_  this
-  (eyre-cards bowl)
+  ::  Earlier versions saved the app inside the generic gossip wrapper.
+  =?  ole  ?=([[%gossip *] *] q.ole)
+    (slot 3 ole)
+  ?:  =(%2 -.q.ole)
+    =.  state  !<(state-2 ole)
+    =^  cards  state  startup:up
+    [cards this]
+  =/  old=state-1
+    ?:  =(%1 -.q.ole)  !<(state-1 ole)
+    ?>  =(%0 -.q.ole)
+    =/  prev  !<(state-0 ole)
+    =/  ret  (~(gas by *(map id ship)) (turn ~(tap in retracted.prev) |=(key=id [key our.bowl])))
+    [%1 listings.prev ret default-cfg]
+  =.  state  *state-2
+  =.  cfg  cfg.old(pass |)
+  =/  rows  ~(val by listings.old)
+  =|  cards=(list card)
+  |-
+  ?^  rows
+    =/  p  i.rows
+    ?:  !=(ship.p our.bowl)
+      $(rows t.rows, legacy (~(put by legacy) [ship.p id.p] p))
+    =.  legacy  (~(put by legacy) [ship.p id.p] p)
+    =^  ignored  state  (make-local:up id.p `p hops.cfg)
+    $(rows t.rows)
+  =/  gone  ~(tap by retracted.old)
+  |-
+  ?^  gone
+    =/  [key=id owner=ship]  i.gone
+    ?:  |(!=(owner our.bowl) (~(has by cache) [owner key]))
+      $(gone t.gone)
+    =^  ignored  state  (make-local:up key ~ hops.cfg)
+    $(gone t.gone)
+  =^  cards  state  startup:up
+  [cards this]
 ::
 ++  on-poke
   |=  [=mark =vase]
@@ -394,7 +579,7 @@
     ?:  =(method %'GET')
       :_  this
       %+  give-simple-payload:app:server  eyre-id
-      (handle-get bowl listings cfg req)
+      (handle-get bowl cache legacy cfg req)
     ?:  =(method %'POST')
       ?:  =(tail %install-pals)
         ?^  no=(need-user req '/~/login?redirect=/apps/omart/pals')
@@ -413,8 +598,9 @@
         ?^  no=(need-user req '/~/login?redirect=/apps/omart/pals')
           :_  this
           (give-simple-payload:app:server eyre-id u.no)
+        =.  pagers  new-pagers:up
         :_  this
-        %+  weld  [retry:gossip]~
+        %+  weld  (reconcile:net &)
         (give-simple-payload:app:server eyre-id (json-ok (pairs:enjs:format ~[ok+b+&])))
       ?:  =(tail %meet)
         ?^  no=(need-user req '/~/login?redirect=/apps/omart/pals')
@@ -478,12 +664,9 @@
           :_  this
           (give-simple-payload:app:server eyre-id (json-err 400 p.made))
         =/  =plugin  p.made
-        =/  nxt  (take-plugin listings retracted plugin)
-        ?~  nxt
-          :_  this
-          (give-simple-payload:app:server eyre-id (json-err 409 'id taken'))
-        :_  this(listings u.nxt, retracted (~(del by retracted) id.plugin))
-        %+  weld  [(invent:gossip %omart-plugin !>(plugin))]~
+        =^  cards  state  (make-local:up id.plugin `plugin hops.cfg)
+        :_  this
+        %+  weld  cards
         %+  give-simple-payload:app:server  eyre-id
         (json-ok (plugin-json plugin))
       ?:  =(tail %retract)
@@ -501,16 +684,12 @@
         ?~  who
           :_  this
           (give-simple-payload:app:server eyre-id (json-err 400 'bad id'))
-        =/  had  (~(get by listings) u.who)
-        ?~  had
+        ?.  |((~(has by cache) [our.bowl u.who]) (~(has by legacy) [our.bowl u.who]))
           :_  this
-          (give-simple-payload:app:server eyre-id (json-err 404 'not found'))
-        ?.  =(ship.u.had our.bowl)
-          :_  this
-          (give-simple-payload:app:server eyre-id (json-err 403 'not yours'))
-        =/  g=gone  [u.who our.bowl]
-        :_  this(listings (~(del by listings) u.who), retracted (~(put by retracted) u.who our.bowl))
-        %+  weld  [(invent:gossip %omart-gone !>(g))]~
+          (give-simple-payload:app:server eyre-id (json-err 404 'own listing not found'))
+        =^  cards  state  (make-local:up u.who ~ hops.cfg)
+        :_  this
+        %+  weld  cards
         %+  give-simple-payload:app:server  eyre-id
         %-  json-ok
         %-  pairs:enjs:format
@@ -532,8 +711,10 @@
         ?~  new
           :_  this
           (give-simple-payload:app:server eyre-id (json-err 400 'bad config'))
-        :_  this(cfg u.new)
-        %+  weld  [(configure:gossip u.new)]~
+        =.  cfg  u.new
+        =.  pagers  new-pagers:up
+        :_  this
+        %+  weld  (reconcile:net &)
         %+  give-simple-payload:app:server  eyre-id
         (json-ok (cfg-json u.new))
       :_  this
@@ -543,25 +724,33 @@
     %+  give-simple-payload:app:server  eyre-id
     [[405 ~] ~]
   ::
+      %omart-page
+    ?>  (allowed:net src.bowl)
+    =/  cursor  !<((unit listing-key) vase)
+    :_  this
+    [%give %fact [/omart/v2/(scot %p src.bowl)]~ %omart-sync !>((page:net cursor))]~
+      %omart-sync
+    ?>  (~(has in wanted:net) src.bowl)
+    =/  incoming  (mole |.(!<(sync-page vase)))
+    ?~  incoming  [~ this]
+    =^  cards  state  (receive:up src.bowl u.incoming)
+    [cards this]
       %omart-action
     ?>  =(src our):bowl
     =+  act=!<(action vase)
     ?-    -.act
         %retry
-      [[retry:gossip]~ this]
+      =.  pagers  new-pagers:up
+      [(reconcile:net &) this]
         %publish
       =/  made  (check-plugin plugin.act(ship our.bowl, when now.bowl))
       ?:  ?=(%| -.made)  [~ this]
-      =/  nxt  (take-plugin listings retracted p.made)
-      ?~  nxt  [~ this]
-      :_  this(listings u.nxt, retracted (~(del by retracted) id.p.made))
-      [(invent:gossip %omart-plugin !>(p.made))]~
+      =^  cards  state  (make-local:up id.p.made `p.made hops.cfg)
+      [cards this]
         %retract
-      =/  had  (~(get by listings) id.act)
-      ?~  had  [~ this]
-      ?.  =(ship.u.had our.bowl)  [~ this]
-      :_  this(listings (~(del by listings) id.act), retracted (~(put by retracted) id.act our.bowl))
-      [(invent:gossip %omart-gone !>(`gone`[id.act our.bowl]))]~
+      ?.  |((~(has by cache) [our.bowl id.act]) (~(has by legacy) [our.bowl id.act]))  [~ this]
+      =^  cards  state  (make-local:up id.act ~ hops.cfg)
+      [cards this]
     ==
   ==
 ::
@@ -570,25 +759,43 @@
   ^-  (quip card _this)
   ?:  ?=([%http-response *] path)  [~ this]
   ?:  &(=(/listings path) =(our src):bowl)  [~ this]
-  ?.  =(/~/gossip/source path)
-    (on-watch:def path)
-  :_  this
-  ::  /source rewraps each fact with our configured hop budget. Only the
-  ::  origin may replenish that budget. Cached listings stay on live relay.
-  %+  murn  ~(val by listings)
-  |=  =plugin
-  ^-  (unit card)
-  ?.  =(ship.plugin our.bowl)  ~
-  `[%give %fact ~ %omart-plugin !>(plugin)]
+  ?>  =(/omart/v2/(scot %p src.bowl) path)
+  ?>  (allowed:net src.bowl)
+  [[%give %fact ~ %omart-sync !>((page:net ~))]~ this]
 ::
 ++  on-arvo
   |=  [=wire sign=sign-arvo]
   ^-  (quip card _this)
-  ?+    wire  (on-arvo:def wire sign)
-      [%eyre *]
-    ?>  ?=([%eyre %bound *] sign)
-    [~ this]
-  ==
+  ?:  ?=([%eyre *] wire)  [~ this]
+  ?:  ?=([%omart %keys @ ~] wire)
+    ?>  ?=([%jael %public-keys *] sign)
+    =/  who  (slav %p i.t.t.wire)
+    ::  Re-sign our records after a key change; peers stop relaying signatures
+    ::  made with a key that Jael no longer authorizes for this identity.
+    =^  refreshed  state  refresh-owned:up
+    =/  rows  ~(tap by cache)
+    |-
+    ?^  rows
+      =/  [key=listing-key val=entry]  i.rows
+      ?:  !=(origin.key who)  $(rows t.rows)
+      =/  auth  (authenticate:op our.bowl now.bowl data.val)
+      $(rows t.rows, cache (~(put by cache) key val(trusted ?~(auth | u.auth))))
+    =^  cards  state  retry-pending:up
+    [(weld refreshed cards) this]
+  ?:  ?=([%omart %timer @ ~] wire)
+    ?>  ?=([%behn %wake *] sign)
+    ?.  =(next (slav %da i.t.t.wire))  [~ this]
+    =^  refreshed  state  refresh-owned:up
+    =^  before  state  retry-pending:up
+    =.  next  (add now.bowl ~m5)
+    =.  pagers  new-pagers:up
+    :_  this
+    ;:  weld  refreshed  before  (reconcile:net &)
+      `(list card)`~[[%pass /omart/timer/(scot %da next) %arvo %b %wait next]]
+    ==
+  ::  Old wrapper timers may still arrive after the state migration.
+  [~ this]
+::
 ++  on-leave  on-leave:def
 ++  on-fail   on-fail:def
 ++  on-agent
@@ -601,40 +808,41 @@
     ?^  p.sign
       (json-err 500 '%pals install request was rejected; check +vats %pals in the dojo')
     (json-ok (pals-status-json bowl))
-  ?:  ?=([%pals *] wire)
-    [~ this]
-  ?.  ?=([%~.~ %gossip *] wire)
-    (on-agent:def wire sign)
-  ?+    -.sign  (on-agent:def wire sign)
+  ?:  ?=([%omart %pals @ ~] wire)
+    ::  Missing/suspended pals retries on the timer, not an immediate nack loop.
+    ?.  ?=(%fact -.sign)  [~ this]
+    ::  Read the actual pals sets after each effect, rather than guessing
+    ::  whether this meet/near/part changed subscription eligibility.
+    [(reconcile:net |) this]
+  ?:  ?=([%omart %peer @ ~] wire)
+    ?>  =(src.bowl (slav %p i.t.t.wire))
+    ?+  -.sign  [~ this]
+      %watch-ack
+        ?^  p.sign  [~ this]
+        [~ this(pagers (~(put by pagers) src.bowl ~))]
       %fact
-    ?+    p.cage.sign  (on-agent:def wire sign)
-        %omart-plugin
-      =/  pul  (mole |.(!<(plugin q.cage.sign)))
-      ?~  pul  [~ this]
-      =/  made  (check-plugin u.pul)
-      ?:  ?=(%| -.made)  [~ this]
-      =/  nxt  (take-plugin listings retracted p.made)
-      ?~  nxt  [~ this]
-      :-  [%give %fact [/listings]~ %omart-plugin !>(p.made)]~
-      this(listings u.nxt)
-        %omart-gone
-      =/  gud  (mole |.(!<(gone q.cage.sign)))
-      ?~  gud  [~ this]
-      =/  had  (~(get by listings) id.u.gud)
-      ?~  had  [~ this]
-      ?.  =(ship.u.had from.u.gud)  [~ this]
-      `this(listings (~(del by listings) id.u.gud), retracted (~(put by retracted) id.u.gud from.u.gud))
+        ?.  =(%omart-sync p.cage.sign)  [~ this]
+        =/  incoming  (mole |.(!<(sync-page q.cage.sign)))
+        ?~  incoming  [~ this]
+        =^  cards  state  (receive:up src.bowl u.incoming)
+        [cards this]
+      %kick
+        [~ this]
     ==
-  ==
+  [~ this]
 ::
 ++  on-peek
   |=  =path
   ^-  (unit (unit cage))
   ?+  path  (on-peek:def path)
-    [%x %listings ~]  ``noun+!>(~(val by listings))
+    [%x %listings ~]  ``noun+!>(~(val by (visible-listings cache legacy)))
     [%x %config ~]    ``noun+!>(cfg)
+    [%x %records ~]   ``noun+!>(cache)
+    [%x %pending ~]   ``noun+!>(pending)
+    [%x %record @ @ ~]
+      ``noun+!>((~(get by cache) [(slav %p i.t.t.path) i.t.t.t.path]))
     [%x %plugin @ ~]
-      =/  =id  i.t.t.path
-      ``noun+!>(`(unit plugin)`(~(get by listings) id))
+      =/  key=id  i.t.t.path
+      ``noun+!>(`(unit plugin)`(~(get by (visible-listings cache legacy)) [our.bowl key]))
   ==
 --

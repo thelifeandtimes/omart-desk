@@ -29,12 +29,8 @@ if [ ! -f "$DESK/app/omart.hoon" ]; then
   exit 1
 fi
 
-if [ ! -f "$DESK/lib/gossip.hoon" ]; then
-  echo "Fetching /lib/gossip.hoon from Fang-/suite..."
-  mkdir -p "$DESK/lib"
-  curl -fsSL https://raw.githubusercontent.com/Fang-/suite/master/lib/gossip.hoon -o "$DESK/lib/gossip.hoon"
-fi
-
+# Remove only the retired transport files that earlier releases installed.
+rm -f "$PIER/omart/lib/gossip.hoon" "$PIER/omart/mar/gossip/rumor.hoon"
 cp -R "$DESK/lib" "$DESK/sur" "$DESK/mar" "$DESK/gen" "$PIER/omart/"
 mkdir -p "$PIER/omart/app"
 cp "$DESK/app/omart.hoon" "$PIER/omart/app/"

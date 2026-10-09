@@ -1,11 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, type FormEvent } from "react";
-import { GossipGraph } from "@/components/gossip-graph";
 import { Sigil } from "@/components/sigil";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PalsSetup } from "@/components/pals-setup";
-import { reachableShips } from "@/lib/omart/gossip";
 import { DISPLAY_NAMES } from "@/lib/omart/ships";
 import { useOmart } from "@/lib/omart/store";
 import type { HearMode } from "@/lib/omart/types";
@@ -27,7 +25,7 @@ function PalsPage() {
   const plugins = useOmart((s) => s.plugins);
   const meet = useOmart((s) => s.meet);
   const part = useOmart((s) => s.part);
-  const reachable = reachableShips(our, pals, config);
+  const connected = pals.filter((pal) => pal.connection === "connected").length;
   const [who, setWho] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [retrying, setRetrying] = useState(false);
@@ -39,7 +37,7 @@ function PalsPage() {
     try {
       const problem = await retryConnections();
       setError(problem);
-      if (!problem) setRetryNote("Retry requested. Connection status updates automatically.");
+      if (!problem) setRetryNote("Sync requested. Listings and withdrawals update automatically.");
     } finally {
       setRetrying(false);
     }
@@ -76,18 +74,22 @@ function PalsPage() {
             how far the listings you publish can travel through your pals.
           </p>
 
-          <GossipGraph className="mt-8" />
+          <p className="mt-3 max-w-xl text-xs leading-relaxed text-muted">
+            Signed sharing requires the updated Omart on both ships. Pals share cached signed
+            listings within the publisher’s hop limit. Withdrawals continue through the network
+            so peers can remove older copies. Catalogs catch up every five minutes and on connection.
+          </p>
         </div>
 
         <section className="order-3 lg:order-none">
           <h2 className="font-display text-2xl italic">Pals</h2>
           <p className="mt-1 text-sm text-muted">
-            {pals.length} on this ship · {Math.max(reachable.size - 1, 0)} in range at hops={config.hops}
+            {pals.length} on this ship · {connected} connected
           </p>
           <Button type="button" variant="secondary" className="mt-4" disabled={retrying} onClick={retry}>
-            {retrying ? "Retrying…" : "Retry connections"}
+            {retrying ? "Syncing…" : "Sync listings"}
           </Button>
-          <p className="mt-2 text-xs text-muted">Retry rejected or missing subscriptions to eligible pals. Your hear settings still apply.</p>
+          <p className="mt-2 text-xs text-muted">Reconnect to eligible pals and catch up on signed listings and withdrawals, including existing connections.</p>
           {retryNote && <p role="status" className="mt-2 text-xs text-muted">{retryNote}</p>}
 
           <form onSubmit={submit} className="mt-5 flex flex-col gap-2 sm:flex-row">
@@ -161,11 +163,11 @@ function PalsPage() {
       <aside className="order-2 h-fit rounded-xl bg-surface p-5 shadow-[var(--shadow-border)] lg:sticky lg:top-8 lg:order-none">
         <h2 className="font-display text-xl italic">config</h2>
         <p className="mt-1 text-sm text-muted">
-          {plugins.length} listings in range · {Math.max(reachable.size - 1, 0)} ships
+          {plugins.length} listings · {connected} connected pals
         </p>
 
         <label className="mt-6 block">
-          <span className="font-mono text-[11px] text-subtle uppercase">hops {config.hops}</span>
+          <span className="font-mono text-[11px] text-subtle uppercase">publication hops {config.hops}</span>
           <input
             type="range"
             min={0}
@@ -176,12 +178,12 @@ function PalsPage() {
           />
           <span className="mt-1 block text-xs text-muted">
             {config.hops === 0
-              ? "Local only. Wrapper emits nothing."
+              ? "New publications stay local. Existing withdrawals still propagate."
               : config.hops === 1
                 ? "Direct pals only. The live default."
                 : config.hops === 2
                   ? "Pals of pals."
-                  : "Three hops. The graph leaks farther."}
+                  : "Your new publications can travel three hops."}
           </span>
         </label>
 
@@ -215,16 +217,9 @@ function PalsPage() {
           </div>
         </fieldset>
 
-        <Button
-          type="button"
-          variant={config.pass ? "default" : "secondary"}
-          className="mt-6 w-full"
-          onClick={() => setConfig({ pass: !config.pass })}
-        >
-          pass {config.pass ? "on" : "off"}
-        </Button>
         <p className="mt-2 text-xs leading-relaxed text-muted">
-          When pass is on, half of listings you publish proxy through a random tell peer — the sneaky whisper in gossip v1.1.1.
+          Changing publication hops affects your next publication. It does not reset the hop
+          budget of listings you relay. The original publisher’s signature stays attached.
         </p>
       </aside>
     </div>

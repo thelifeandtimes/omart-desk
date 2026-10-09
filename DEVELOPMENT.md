@@ -16,7 +16,7 @@ The initial setup uses Vere 4.6, Zuse 408, and
 [Fang-/suite](https://github.com/Fang-/suite) at
 `b69ce154ae6ce906c2598cd46c806158b51b8a0f` for `%pals`.
 All three ships are mutual pals with Omart's default configuration:
-hops 1, hear/tell `%targets`, pass off.
+hops 1, hear/tell `%targets`.
 
 ## Daily work
 
@@ -60,6 +60,7 @@ npm test
 npx tsc --noEmit
 cd ..
 python3 scripts/check-sharing.py
+python3 scripts/check-signed-sharing.py
 ```
 
 The integration check requires `urbit`, `nc`, and all three development ships
@@ -67,8 +68,7 @@ running with `%pals` and `%omart`. It temporarily changes the three ships'
 friendships and gossip settings, publishes uniquely named fixtures, and restores
 the previous friendships/settings and retracts fixtures in a `finally` block.
 Run it when these development ships are not being edited concurrently.
-Reconnect checks allow the library's existing 15-second kick backoff; live
-listing checks use a shorter 12-second deadline.
+Live listing checks use a 12-second deadline; cache catch-up checks allow 30 seconds.
 Do not interrupt it during cleanup. It checks:
 
 - A watch rejected before add-back recovers in seconds; earlier and newly
@@ -79,7 +79,7 @@ Do not interrupt it during cleanup. It checks:
 - A new one-hop listing stops at the direct pal; a new two-hop listing reaches
   the third ship through a chain, and its retraction follows it.
 - Reconnecting to a relay does not re-originate its cached one-hop listings.
-- Zero-hop publishing and retracting succeed locally and send no live gossip.
+- Zero-hop publishing stays local. Withdrawals still propagate to eligible peers.
 
 The UI tests cover add-back, dependency setup/progress/error states, install
 request failures, and listing ID validation. In the ship-served browser, stopping
@@ -112,22 +112,35 @@ were verified in the ship-served browser against the running fakenet.
 Zero-hop publication also returned HTTP 500: the gossip library evaluated
 `dec hops` before checking for zero. The zero guard now precedes rumor creation.
 
-Further reconnect testing found that snapshots treated cached listings as newly
-originating rumors, resetting their hop budget and resurrecting withdrawn copies.
-Snapshots now include only the responding ship's own listings; relayed listings
-travel through live gossip with their original hop budget. **Retry connections**
-and `:omart &omart-action [%retry ~]` retry only missing watches. The Pals page
-shows actual Gall subscription acknowledgments rather than inferring connections
-from the pal list.
+The earlier source-only snapshot fix has now been superseded by the signed
+protocol described in [Signed sharing](docs/SHARING.md). The generic gossip library
+and its randomized proxy transport have been removed.
 
-The saved state and existing rumor formats are unchanged. Full offline
-convergence remains unfinished: withdrawals missed while offline are not replayed,
-and withdrawing the same ID after re-publishing it can hit identical-rumor
-deduplication. An offline relay also does not catch up historical multi-hop
-listings from a peer's cache. These need a versioned update/retraction design.
-Old peers can still re-originate their caches until they upgrade. Stale probe
-records and fixtures from failing regression runs remain diagnostic evidence;
-passing runs clean up their own newly-created `check-*` fixtures.
+The signed suite also checks:
+
+- Paged catch-up of 19 publications plus withdrawals through a relay while the
+  origin is disconnected; signatures remain byte-for-byte identical.
+- Withdrawal arriving before publication; replays cannot revive it.
+- Tampering with the signature, publisher, revision, budget, content, or withdrawal.
+- Repeated publish/withdraw cycles and delayed older updates in both directions.
+- Withdrawal propagation after reducing publication hops to zero.
+- Two publishers using the same ID, with independent withdrawal.
+- Key binding, comet identity, and both supported signature suites.
+- Deterministic ordering, publication budgets and retained withdrawal relay.
+- Old wrapped/unwrapped states (versions 0 and 1), migration of local publications
+  and withdrawals, preservation of legacy foreign entries, and version-2 reload.
+- Rejection of the unsigned legacy transport and non-pal injection.
+- Unknown-key quarantine, duplicate suppression, and original expiry after retry.
+
+The pure Hoon tests in `tests/protocol-*.hoon` build an isolated in-memory agent
+when needed and never deliver its returned cards. The Python runner loads them
+against the installed development desk. Ordinary fakes have fixed keys, so actual
+livenet key rotation is not exercised. No livenet ships are accessed by these tests.
+
+Tests retract their new fixtures while retaining the resulting signed tombstones.
+Older diagnostic records from the original failing gossip implementation remain.
+The `upgrade-signed-*` fixtures were published on all three ships before their
+first signed upgrade; when present, the suite checks their migrated identities.
 
 ## Recreate from scratch
 
